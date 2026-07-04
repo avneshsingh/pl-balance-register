@@ -1,0 +1,61 @@
+{
+  "name": "pl-balance-register",
+  "productName": "PL Balance Register",
+  "version": "1.0.0",
+  "description": "Privilege Leave balance register for judicial/government offices — click-based entry, Excel & PDF export",
+  "main": "electron/main.js",
+  "author": "Avnesh",
+  "license": "MIT",
+  "scripts": {
+    "dev:web": "vite",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
+    "dev:electron": "electron .",
+    "build:web": "vite build",
+    "dist": "vite build && electron-builder --win",
+    "dist:portable": "vite build && electron-builder --win portable",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.0.3",
+    "vitest": "^3.2.6",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "in.avnesh.plregister",
+    "productName": "PL Balance Register",
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "PL Balance Register"
+    }
+  }
+}
