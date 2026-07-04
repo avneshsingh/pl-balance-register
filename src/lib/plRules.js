@@ -20,6 +20,7 @@ export const ENTRY_TYPES = {
   ADD_FULL_YEAR: 'ADD_FULL_YEAR',
   JOINING_TIME: 'JOINING_TIME',
   DIRECT_PL_ADDITION: 'DIRECT_PL_ADDITION',
+  LEAVE_CANCELLED: 'LEAVE_CANCELLED',
   LEAVE_TAKEN: 'LEAVE_TAKEN',
   PL_SURRENDER: 'PL_SURRENDER',
   STRIKE_DEDUCTION: 'STRIKE_DEDUCTION',
@@ -268,6 +269,9 @@ export function newEntry(type, entries, opts = {}) {
       };
     }
     case ENTRY_TYPES.ADD_HALF_YEAR: {
+      if (opts.manual) {
+        return { id, type, earnedFrom: '', earnedTo: '', plEarned: '', label: '' };
+      }
       const p = nextCreditPeriod(entries, opts.serviceStart);
       return {
         id,
@@ -279,6 +283,9 @@ export function newEntry(type, entries, opts = {}) {
       };
     }
     case ENTRY_TYPES.ADD_FULL_YEAR: {
+      if (opts.manual) {
+        return { id, type, earnedFrom: '', earnedTo: '', plEarned: '', label: '' };
+      }
       const p = nextFullYearPeriod(entries, opts.serviceStart);
       return {
         id,
@@ -303,6 +310,15 @@ export function newEntry(type, entries, opts = {}) {
         type,
         label: opts.label || 'Direct PL addition',
         plEarned: opts.days || 0,
+      };
+    case ENTRY_TYPES.LEAVE_CANCELLED:
+      return {
+        id,
+        type,
+        earnedFrom: opts.from || '',
+        earnedTo: opts.to || '',
+        plEarned: '',
+        label: opts.label || '',
       };
     case ENTRY_TYPES.LEAVE_TAKEN:
       return {
@@ -353,6 +369,7 @@ export const actions = {
   addFullYear: (entries, opts = {}) => newEntry(ENTRY_TYPES.ADD_FULL_YEAR, entries, opts),
   addJoiningTime: (entries, opts) => newEntry(ENTRY_TYPES.JOINING_TIME, entries, opts),
   addDirectPl: (entries, opts) => newEntry(ENTRY_TYPES.DIRECT_PL_ADDITION, entries, opts),
+  addLeaveCancelled: (entries, opts) => newEntry(ENTRY_TYPES.LEAVE_CANCELLED, entries, opts),
   addLeaveTaken: (entries, opts) => newEntry(ENTRY_TYPES.LEAVE_TAKEN, entries, opts),
   addPlSurrender: (entries, opts) => newEntry(ENTRY_TYPES.PL_SURRENDER, entries, opts),
   addStrikeDeduction: (entries, opts) => newEntry(ENTRY_TYPES.STRIKE_DEDUCTION, entries, opts),

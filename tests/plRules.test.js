@@ -168,3 +168,18 @@ describe('half-year and full-year credit periods', () => {
     expect(entry.plEarned).toBe(15);
   });
 });
+
+describe('leave cancelled credit', () => {
+  it('10-03-2020 → 14-03-2020 credits 5 days', () => {
+    const entry = {
+      id: 'lc',
+      type: ENTRY_TYPES.LEAVE_CANCELLED,
+      earnedFrom: '2020-03-10',
+      earnedTo: '2020-03-14',
+      plEarned: 5,
+    };
+    const ledger = computeLedger([entry]);
+    expect(ledger[0].plEarned).toBe(5);
+    expect(ledger[0].balAfterTaken).toBe(5);
+  });
+});

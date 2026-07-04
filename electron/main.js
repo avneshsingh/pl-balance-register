@@ -94,7 +94,17 @@ ipcMain.handle('data:restore', async () => {
     properties: ['openFile'],
   });
   if (!filePaths || !filePaths[0]) return null;
-  const data = JSON.parse(fs.readFileSync(filePaths[0], 'utf8'));
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(filePaths[0], 'utf8'));
+  } catch {
+    dialog.showErrorBox('Restore failed', 'This file is not a valid PL Register backup');
+    return null;
+  }
+  if (!isValidBackup(data)) {
+    dialog.showErrorBox('Restore failed', 'This file is not a valid PL Register backup');
+    return null;
+  }
   fs.writeFileSync(dataFile(), JSON.stringify(data, null, 2));
   return data;
 });
@@ -136,4 +146,16 @@ ipcMain.handle('export:pdf', async (_e, { html, name }) => {
 
 function sanitize(s) {
   return String(s || 'employee').replace(/[^\w\u0900-\u097F -]+/g, '').trim().replace(/\s+/g, '-');
+}
+
+function isValidBackup(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.employees)) return false;
+  return data.employees.every(
+    (emp) =>
+      emp &&
+      typeof emp === 'object' &&
+      typeof emp.id === 'string' &&
+      typeof emp.name === 'string' &&
+      Array.isArray(emp.entries)
+  );
 }

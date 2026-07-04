@@ -14,6 +14,7 @@ const TITLES = {
   [ENTRY_TYPES.ADD_FULL_YEAR]: 'Full-Year Credit',
   [ENTRY_TYPES.JOINING_TIME]: 'Joining Time Credit',
   [ENTRY_TYPES.DIRECT_PL_ADDITION]: 'Direct PL Addition',
+  [ENTRY_TYPES.LEAVE_CANCELLED]: 'Leave Cancelled (Credit Back)',
   [ENTRY_TYPES.LEAVE_TAKEN]: 'Leave Taken',
   [ENTRY_TYPES.PL_SURRENDER]: 'PL Surrender',
   [ENTRY_TYPES.STRIKE_DEDUCTION]: 'Strike Deduction',
@@ -51,8 +52,15 @@ export default function EntryModal({ mode, type, entry, entries, onSave, onClose
     }
   }, [e.earnedFrom, e.earnedTo, type, mode]);
 
+  // Leave cancelled: live PL earned = inclusive days
+  useEffect(() => {
+    if (type !== ENTRY_TYPES.LEAVE_CANCELLED || !e.earnedFrom || !e.earnedTo) return;
+    setE((prev) => ({ ...prev, plEarned: daysInclusive(e.earnedFrom, e.earnedTo) }));
+  }, [e.earnedFrom, e.earnedTo, type]);
+
   const isFirst = type === ENTRY_TYPES.FIRST_ENTRY;
   const isEarnedDates = [ENTRY_TYPES.ADD_HALF_YEAR, ENTRY_TYPES.ADD_FULL_YEAR].includes(type);
+  const isLeaveCancelled = type === ENTRY_TYPES.LEAVE_CANCELLED;
   const isTaken = type === ENTRY_TYPES.LEAVE_TAKEN;
   const isJoining = type === ENTRY_TYPES.JOINING_TIME;
   const isDirectAdd = type === ENTRY_TYPES.DIRECT_PL_ADDITION;
@@ -63,6 +71,7 @@ export default function EntryModal({ mode, type, entry, entries, onSave, onClose
   const valid =
     (isFirst && e.earnedFrom && e.earnedTo && Number(e.plEarned) >= 0) ||
     (isEarnedDates && e.earnedFrom && e.earnedTo && Number(e.plEarned) >= 0) ||
+    (isLeaveCancelled && e.earnedFrom && e.earnedTo && Number(e.plEarned) > 0) ||
     (isTaken && e.takenFrom && e.takenTo && takenDaysLive > 0) ||
     (isJoining && Number(e.plEarned) > 0) ||
     (isDirectAdd && Number(e.plEarned) > 0) ||
@@ -154,6 +163,28 @@ export default function EntryModal({ mode, type, entry, entries, onSave, onClose
                   <input type="number" step="0.5" value={e.plEarned ?? ''} onChange={(ev) => set('plEarned', ev.target.value)} />
                 </label>
               </div>
+            </>
+          )}
+
+          {isLeaveCancelled && (
+            <>
+              <div className="field-row">
+                <label>From
+                  <input type="date" value={e.earnedFrom || ''} onChange={(ev) => set('earnedFrom', ev.target.value)} />
+                </label>
+                <label>To
+                  <input type="date" value={e.earnedTo || ''} onChange={(ev) => set('earnedTo', ev.target.value)} />
+                </label>
+              </div>
+              <div className="calc-strip">
+                <span>Days: <b>{earnedDaysLive ?? '—'}</b></span>
+                <label className="inline">PL Earned
+                  <input type="number" step="0.5" value={e.plEarned ?? ''} onChange={(ev) => set('plEarned', ev.target.value)} />
+                </label>
+              </div>
+              <label>Remark (optional)
+                <input type="text" value={e.label || ''} placeholder="e.g., Leave cancellation order" onChange={(ev) => set('label', ev.target.value)} />
+              </label>
             </>
           )}
 

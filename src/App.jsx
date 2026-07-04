@@ -13,13 +13,31 @@ import EntryModal from './components/EntryModal';
 import EmployeeModal from './components/EmployeeModal';
 import { buildPrintHtml } from './lib/printTemplate';
 import { excelBufferFromPayload, downloadExcelBuffer } from './lib/exportExcel';
+import { SHORTCUT_MAP, isShortcutActionDisabled } from './lib/toolbarConfig';
+import { normalizeBackupData, BACKUP_INVALID_MSG } from './lib/validateBackup';
 
 const isElectron = typeof window !== 'undefined' && !!window.api;
+
+function downloadBackupJson(data) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `PL-Register-Backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 const webStore = {
   loadData: async () => JSON.parse(localStorage.getItem('pl-register') || '{"employees":[]}'),
   saveData: async (d) => localStorage.setItem('pl-register', JSON.stringify(d)),
-  backup: async () => alert('Backup is available in the installed desktop app.'),
+  backup: async (data) => {
+    downloadBackupJson(data);
+    return true;
+  },
   restore: async () => null,
   saveExcel: async () => false,
   exportPdf: async ({ html }) => {
@@ -41,10 +59,11 @@ function balanceTone(bal, cap) {
 /** Map entry type → named action (Phase 2 shortcuts bind here) */
 const ACTION_MAP = {
   FIRST_ENTRY: (entries, emp) => actions.addFirstEntry(entries, {}),
-  ADD_HALF_YEAR: (entries, emp) => actions.addHalfYear(entries, { serviceStart: emp.serviceStart }),
-  ADD_FULL_YEAR: (entries, emp) => actions.addFullYear(entries, { serviceStart: emp.serviceStart }),
+  ADD_HALF_YEAR: (entries, emp, opts = {}) => actions.addHalfYear(entries, { serviceStart: emp.serviceStart, ...opts }),
+  ADD_FULL_YEAR: (entries, emp, opts = {}) => actions.addFullYear(entries, { serviceStart: emp.serviceStart, ...opts }),
   JOINING_TIME: (entries) => actions.addJoiningTime(entries, {}),
   DIRECT_PL_ADDITION: (entries) => actions.addDirectPl(entries, {}),
+  LEAVE_CANCELLED: (entries) => actions.addLeaveCancelled(entries, {}),
   LEAVE_TAKEN: (entries) => actions.addLeaveTaken(entries, {}),
   PL_SURRENDER: (entries) => actions.addPlSurrender(entries, {}),
   STRIKE_DEDUCTION: (entries) => actions.addStrikeDeduction(entries, {}),
@@ -59,6 +78,10 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
   const loaded = useRef(false);
+  const restoreInputRef = useRef(null);
+  const runEntryActionRef = useRef(() => {});
+  const entriesRef = useRef([]);
+  const shortcutsActiveRef = useRef(false);
 
   useEffect(() => {
     api.loadData().then((d) => {
@@ -112,6 +135,10 @@ export default function App() {
     setEmployeeModal(null);
   };
 
+  const openEmployeeEdit = (emp) => {
+    setEmployeeModal({ mode: 'edit', id: emp.id, employee: emp });
+  };
+
   const removeEmployee = (id) => {
     const emp = data.employees.find((e) => e.id === id);
     if (!confirm(`Delete "${emp?.name}" and all ${emp?.entries?.length || 0} entries? This cannot be undone.`)) return;
@@ -119,19 +146,91 @@ export default function App() {
     if (selectedId === id) setSelectedId(null);
   };
 
-  const runEntryAction = useCallback((type) => {
+  const runEntryAction = useCallback((type, opts = {}) => {
     if (!employee) return;
     const fn = ACTION_MAP[type];
     if (!fn) return;
 
-    if (isOneClick(type)) {
+    if (isOneClick(type) && !opts.manual) {
       const entry = fn(entries, employee);
       updateEmployee(employee.id, (e) => ({ ...e, entries: [...e.entries, entry] }));
-    } else if (needsModal(type)) {
-      const entry = fn(entries, employee);
+    } else if (needsModal(type) || opts.manual) {
+      const entry = fn(entries, employee, opts);
       setModal({ mode: 'add', type, entry });
     }
   }, [employee, entries, updateEmployee]);
+
+  runEntryActionRef.current = runEntryAction;
+  entriesRef.current = entries;
+  shortcutsActiveRef.current = !!(employee && !modal && !employeeModal);
+
+  useEffect(() => {
+    const onKeyDown = (ev) => {
+      if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      const t = ev.target;
+      if (
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      if (!shortcutsActiveRef.current) return;
+
+      const action = SHORTCUT_MAP[ev.key.toLowerCase()];
+      if (!action) return;
+      if (isShortcutActionDisabled(action, entriesRef.current)) return;
+
+      ev.preventDefault();
+      runEntryActionRef.current(action.type, action.manual ? { manual: true } : {});
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const applyRestore = (raw) => {
+    if (!raw) return;
+    const normalized = normalizeBackupData(raw);
+    if (!normalized) {
+      alert(BACKUP_INVALID_MSG);
+      return;
+    }
+    setData(normalized);
+    setSelectedId(normalized.employees[0]?.id || null);
+  };
+
+  const handleBackup = async () => {
+    if (isElectron) {
+      await api.backup();
+    } else {
+      await api.backup(data);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (isElectron) {
+      applyRestore(await api.restore());
+    } else {
+      restoreInputRef.current?.click();
+    }
+  };
+
+  const onRestoreFile = (ev) => {
+    const file = ev.target.files?.[0];
+    ev.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        applyRestore(JSON.parse(reader.result));
+      } catch {
+        alert(BACKUP_INVALID_MSG);
+      }
+    };
+    reader.onerror = () => alert(BACKUP_INVALID_MSG);
+    reader.readAsText(file);
+  };
 
   const saveEntry = (entry) => {
     updateEmployee(employee.id, (e) => {
@@ -220,27 +319,40 @@ export default function App() {
                 className={'emp-item' + (e.id === selectedId ? ' active' : '')}
                 onClick={() => setSelectedId(e.id)}
               >
-                <div className="emp-name">{e.name}</div>
-                <div className="emp-meta">
-                  <span>{e.designation || '—'}</span>
-                  <span className={'emp-bal' + balanceTone(bal, cap)}>{bal}</span>
+                <div className="emp-item-body">
+                  <div className="emp-name">{e.name}</div>
+                  <div className="emp-meta">
+                    <span>{e.designation || '—'}</span>
+                    <span className={'emp-bal' + balanceTone(bal, cap)}>{bal}</span>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="emp-item-edit"
+                  title="Edit name / designation"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    openEmployeeEdit(e);
+                  }}
+                >
+                  ✎
+                </button>
               </div>
             );
           })}
         </div>
         <div className="side-footer">
-          <button className="btn btn-ghost" onClick={() => api.backup()}>Backup</button>
-          <button
-            className="btn btn-ghost"
-            onClick={async () => {
-              const d = await api.restore();
-              if (d) {
-                setData(d);
-                setSelectedId(d.employees?.[0]?.id || null);
-              }
-            }}
-          >Restore</button>
+          <button className="btn btn-ghost" onClick={handleBackup}>Backup</button>
+          <button className="btn btn-ghost" onClick={handleRestore}>Restore</button>
+          {!isElectron && (
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={onRestoreFile}
+            />
+          )}
         </div>
       </aside>
 
@@ -257,14 +369,24 @@ export default function App() {
         ) : (
           <>
             <header className="emp-header">
-              <div>
-                <h1
-                  onDoubleClick={() => setEmployeeModal({ mode: 'edit', id: employee.id, employee })}
-                  title="Double-click to edit"
+              <div className="emp-title-row">
+                <div>
+                  <h1
+                    onDoubleClick={() => openEmployeeEdit(employee)}
+                    title="Double-click to edit"
+                  >
+                    {employee.name}
+                  </h1>
+                  <div className="emp-desig">{employee.designation}</div>
+                </div>
+                <button
+                  type="button"
+                  className="emp-header-edit"
+                  title="Edit name / designation"
+                  onClick={() => openEmployeeEdit(employee)}
                 >
-                  {employee.name}
-                </h1>
-                <div className="emp-desig">{employee.designation}</div>
+                  ✎
+                </button>
               </div>
               <div className="header-right">
                 <div className={'balance-card' + balanceTone(balance, applicableCap)}>
